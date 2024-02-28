@@ -1,0 +1,696 @@
+---
+title: "ESTADISTICAS COES"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: journal
+    orientation: columns
+    social: menu
+    source_code: embed
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(plotly)
+library(readxl)
+library(forecast)
+library(qcc)
+library(kableExtra)
+
+#DATA FRAME USADOS
+ld <- read_excel("ld.xlsx", sheet = "dtotal")
+dat <- read_excel("ld.xlsx", sheet = "dfuerahp")
+gu <- read_excel("ld.xlsx", sheet = "dgrandesus")
+pmeses<- read_excel("ld.xlsx", sheet = "prodmeses")
+prodt <- read_excel("ld.xlsx", sheet = "Produc")
+hidro <- read_excel("ld.xlsx", sheet = "Hidro")
+cobertura <- read_excel("ld.xlsx", sheet = "cobert")
+tabindi <- read_excel("ld.xlsx", sheet = "tablaindicadores")
+costo <- read_excel("ld.xlsx", sheet = "COSTO")
+```
+
+
+Caratula
+===================================== 
+
+<center><h1><strong>UNIVERSIDAD NACIONAL DEL CALLAO</strong></h1></center>
+<center><h1><strong>FACULTAD DE INGENIERIA MECANICA - ENERGÍA</strong></h1></center>
+<center><h1><strong>ESCUELA PROFESIONAL DE INGENIERIA EN ENERGÍA</strong></h1></center>
+<center>
+![ ](C:/GitHub/sthefanny/investigacionfinal/logunac.jpg){ width=15% }
+</center>
+<center><h2><strong>ASIGNATURA: SISTEMAS ELECTRICOS DE POTENCIA</strong></h2></center>
+<center><h2><strong>PROFESOR: CONDORI HUAYLLANI JOSE MANUEL</strong></h2></center>
+<center><h3><strong>INTEGRANTES: Macha Otivo Sthefanny, Bravo Morales Javier, Candio Chávez Giancarlo, Placido León Kevin, Silvestre Yta Jhon</strong></h3></center>
+
+
+Producción
+===================================== 
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Producción Total 2015 - 2023
+
+```{r}
+# Convert data from wide to long format
+prodt_long <- prodt %>%
+  pivot_longer(cols = -meses, names_to = "year", values_to = "Gwh")
+
+# Convert "meses" column to a factor with the correct order
+prodt_long$meses <- factor(prodt_long$meses, levels = c("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"))
+
+# Crea el gráfico ggplot
+line_chart <- ggplot(prodt_long, aes(x = meses, y = Gwh, group = year, color = year)) +
+  geom_line() +
+  labs(title = "Producción Total en Gwh del 2015 al 2023",
+       x = "Meses",
+       y = "Gwh") +
+  theme_minimal()
+
+# Convierte el gráfico ggplot a un gráfico interactivo de plotly
+interactive_chart <- ggplotly(line_chart)
+
+# Muestra el gráfico interactivo
+interactive_chart
+
+```
+
+### Producción por tipo de energía 
+
+
+
+```{r}
+# Crear el conjunto de datos
+datos <- data.frame(
+  TIPO_DE_ENERGIA = c("HIDROELECTRICA", "TERMOELECTRICA", "SOLAR", "EÓLICO"),
+  AÑO2015 = c(22456.2, 21262.2, 230.95, 590.72),
+  AÑO2016 = c(23009.6, 24020.8, 241.82, 1054.11),
+  AÑO2017 = c(27741.4, 19898.4, 288.17, 1065.23),
+  AÑO2018 = c(29357.91, 19220.04, 745.19, 1493.63),
+  AÑO2019 = c(30168.43, 20312.83, 761.73, 1646.16),
+  AÑO2020 = c(29317.56, 17288.02, 777.86, 1803.2),
+  AÑO2021 = c(30664.41, 20723.38, 801.92, 1800.64),
+  AÑO2022 = c(28486.35, 24846.56, 821.19, 1930.1),
+  AÑO2023 = c(27863.81, 27219.98, 956.17, 2353.41)
+)
+
+# Transformar los datos a formato largo (tidy data)
+datos_long <- datos %>%
+  pivot_longer(cols = starts_with("AÑO"), names_to = "Año", values_to = "Energía")
+
+# Crear el gráfico de barras con plotly para habilitar el zoom
+plot_ly(datos_long, x = ~Año, y = ~Energía, type = 'bar', color = ~TIPO_DE_ENERGIA) %>%
+  layout(title = "Producción de Energía por Tipo y Año",
+         xaxis = list(title = "Año"),
+         yaxis = list(title = "Energía (kWh)"),
+         dragmode = "zoom",
+         showlegend = TRUE)
+
+```
+
+
+
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Producción Mensual segun el tipo de energia 2018 - 2022
+
+```{r}
+# Definir la aplicación Shiny
+ui <- fluidPage(
+    sidebarLayout(
+    sidebarPanel(
+      selectInput("fuente", "Tipo de Fuente:",
+                  choices = unique(colnames(pmeses)[-1]),
+                  selected = unique(colnames(pmeses)[-1])[1])
+    ),
+    
+    mainPanel(
+      plotOutput("barplot")
+    )
+  )
+)
+
+server <- function(input, output) {
+  output$barplot <- renderPlot({
+    fuente_seleccionada <- input$fuente
+    datos_filtrados <- pmeses %>%
+      mutate(MESES = factor(MESES, levels = unique(pmeses$MESES))) %>%
+      select(MESES, !!fuente_seleccionada)
+    
+    ggplot(datos_filtrados, aes(x = MESES, y = !!sym(fuente_seleccionada))) +
+      geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+      labs(title = paste("Producción Mensual en GWh - Año 2022 (", fuente_seleccionada, ")"),
+           x = "Meses", y = "Producción (GWh)") +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  })
+}
+
+shinyApp(ui, server)
+
+```
+
+### Producción Total según el tipo de energía
+
+```{r}
+# Crear el conjunto de datos
+tabla_datos <- data.frame(
+  SECTOR = c("HIDROELECTRICA", "TERMOELECTRICA", "SOLAR", "EOLICO"),
+  GWH = c(175858.5, 129610.8, 5625.0, 11807.3)
+)
+
+# Crear el gráfico circular con plotly para habilitar el zoom
+plot_ly(tabla_datos, labels = ~SECTOR, values = ~GWH, type = 'pie', hole = 0.6) %>%
+  layout(title = "Distribución de Energía por Sector",
+         dragmode = "zoom",
+         showlegend = TRUE)
+
+```
+
+
+
+Demanda 
+===================================== 
+
+Imputs {.sidebar}
+-----------------------------------------------------------------------
+ Entendido, según el COES, la demanda eléctrica se mide de manera continua, sin segmentarla en categorías específicas como horas punta o fuera de horas punta. Esto significa que se registra y monitorea constantemente, sin interrupciones, para garantizar un suministro eléctrico confiable y eficiente. La demanda puede variar a lo largo del día debido a factores como la actividad industrial, el clima y las necesidades de los usuarios. Es fundamental para la planificación y operación del sistema eléctrico.
+ 
+ 
+| **DEMANDA**      |
+|------------------|
+| DEMANDA TOTAL    |
+| DEMANDA EMPRESAS |
+| HP vs FHP        |
+
+
+Column {data-width=500} 
+-----------------------------------------------------------------------
+
+### Demanda total en MW por meses de 2015 a 2023
+
+```{r}
+# Convert data from wide to long format
+ld_long <- ld %>%
+  pivot_longer(cols = -meses, names_to = "year", values_to = "demanda_mw")
+
+# Convert "meses" column to a factor with the correct order
+ld_long$meses <- factor(ld_long$meses, levels = c("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"))
+
+# Crea el gráfico ggplot
+line_chart <- ggplot(ld_long, aes(x = meses, y = demanda_mw, group = year, color = year)) +
+  geom_line() +
+  labs(title = "Demanda total 2015 a 2023",
+       x = "Meses",
+       y = "Demanda MW") +
+  theme_minimal()
+
+# Convierte el gráfico ggplot a un gráfico interactivo de plotly
+interactive_chart <- ggplotly(line_chart)
+
+# Muestra el gráfico interactivo
+interactive_chart
+
+```
+
+
+### Demanda de HP vs HFP 
+
+
+```{r}
+# Datos
+fecha <- c(2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023)
+hfp <- c(2036.45, 2184.71, 2237.14, 2469.99, 2517.80, 2626.33, 2629.76, 2922.49, 2973.43)
+hp <- c(1740.11, 2109.57, 1905.63, 2102.93, 2171.88, 2287.63, 2330.98, 2688.32, 2613.73)
+
+# Crear dataframe
+datos <- data.frame(FECHA = fecha, HFP = hfp, HP = hp)
+
+# Gráfico de barras interactivo con plot_ly
+bar_chart <- plot_ly(datos, x = ~FECHA, y = ~HFP, type = "bar", name = "HFP", marker = list(color = "#4BD3C2")) %>%
+  add_trace(y = ~HP, name = "HP", marker = list(color = "#EA65C8")) %>%
+  layout(barmode = "group", title = "HP vs HFP", xaxis = list(title = "Año"), yaxis = list(title = "Valor"))
+
+bar_chart
+
+```
+
+
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Demanda de empresas 
+
+```{r}
+# UI
+ui <- fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("year",
+                  "Seleccionar Año:",
+                  min = 2015,
+                  max = 2023,
+                  value = 2023,
+                  step = 1)
+    ),
+    mainPanel(
+      plotOutput("bar_plot")
+    )
+  )
+)
+
+# Server
+server <- function(input, output) {
+  # Filtrar el conjunto de datos según el año seleccionado
+  selected_data <- reactive({
+    filter(dat, get(paste0("MW", input$year)) > 0)
+  })
+
+  # Crear el gráfico de barras interactivo
+  output$bar_plot <- renderPlot({
+    ggplot(selected_data(), aes(x = EMPRESA, y = get(paste0("MW", input$year)), fill = get(paste0("MW", input$year)))) +
+      geom_bar(stat = "identity") +
+      scale_fill_gradientn(colors = c("yellow", "orange", "red"), na.value = "white", guide = "legend") +
+      labs(title = paste("Gráfico de Barras de MW", input$year, "por Empresa"),
+           x = "Empresa",
+           y = paste("MW", input$year)) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  })
+}
+
+
+# Ejecutar la aplicación Shiny
+shinyApp(ui, server)
+```
+
+
+
+
+Cobertura
+===================================== 
+
+
+Column {.tabset .tabset-fade}
+-------------------------------------
+
+### Cobertura de la demanda anual {.datset}
+      
+      
+```{r}
+# UI
+ui <- fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("year",
+                  "Seleccionar Año:",
+                  min = 2018,
+                  max = 2022,
+                  value = 2022,
+                  step = 1)
+    ),
+    mainPanel(
+      plotOutput("bar_plot")
+    )
+  )
+)
+
+# Server
+server <- function(input, output) {
+  # Filtrar el conjunto de datos según el año seleccionado
+  selected_data <- reactive({
+    filter(cobertura, !is.na(get(paste0("año", input$year))))
+  })
+
+  # Crear el gráfico de barras interactivo
+  output$bar_plot <- renderPlot({
+    ggplot(selected_data(), aes(x = EMPRESA, y = get(paste0("año", input$year)), fill = get(paste0("año", input$year)))) +
+      geom_bar(stat = "identity") +
+      scale_fill_gradientn(colors = c("green", "cyan", "red"), na.value = "white", guide = "legend") +
+      labs(title = paste("Gráfico de Barras de MW", input$year, "por Empresa"),
+           x = "Empresa",
+           y = paste("MW", input$year)) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  })
+}
+
+# Ejecutar la aplicación Shiny
+shinyApp(ui, server)
+```
+
+### Indicadores
+
+```{r}
+knitr::kable(tabindi, "html") %>%
+  kableExtra::kable_styling(full_width = FALSE)
+```
+
+
+
+### Balance e indicadores 2018 
+
+***Balance de Energía Eléctrica***
+
+
+
+El balance de energía eléctrica muestra el flujo que esta recorre desde su generación hasta llegar al consumidor final. Para lograr esto, la energía eléctrica se transporta a través de los sistemas de transmisión y distribución.
+Durante el año 2018, se generaron un total de 54,893 GWh de energía eléctrica en el país, y se importaron 32 GWh desde Ecuador. Del total de la energía generada en el país, 52, 362 GWh (95%) proviene de las empresas generadoras del mercado eléctrico, mientras que 2,531 GWh (4.6%) proviene de las empresas industriales que generan energía eléctrica para su propio consumo (uso propio). En este último grupo, las empresas industriales con mayor participación en la generación de energía eléctrica son las empresas petroleras y mineras.
+
+
+***Grafico***
+
+<center>
+![ ](C:/GitHub/sthefanny/investigacionfinal/2018.png){ width=80% }
+</center>
+
+### Balance e indicadores 2019
+
+***Balance y Energía Eléctrica***
+
+El balance de energía eléctrica muestra el flujo que esta recorre, desde el punto donde se genera (incluyendo la importación), hasta que llega al consumidor final, para esto, la energía es transportada a través de los sistemas de transmisión y distribución.
+Durante el año 2019, la energía eléctrica total generada en el país fue 56 969 GWh y se importaron desde el Ecuador 60 GWh. Del total de la energía generada en país 54 449 GWh (96%) corresponde a las empresas del mercado eléctrico y 2 520 GWh (4%) corresponde a las empresas industriales que generan para su uso propio.
+Con relación a la energía eléctrica total disponible (generación nacional más importación) el 1,4% se utilizó para los servicios auxiliares (consumo propio) de las centrales eléctricas, el 11,2% se perdió en el proceso de transmisión y distribución de la energía eléctrica, y finalmente el 87,3% de la energía total disponible llegó hasta el consumidor final.
+
+La energía generada por las empresas del mercado eléctrico, el 1,3% fue utilizado para los servicios auxiliares de las centrales eléctricas, el 11,5% fueron pérdidas y el 87,1% llegó hasta el consumidor final. Asimismo, de la energía generada por las empresas industriales para su uso propio, el 1,9% se usó para servicios auxiliares de sus centrales, el 4,3% fueron pérdidas y el 92,4% se para las operaciones de estas empresas industriales que están conformadas por minera, petroleras, refinería, etc.
+
+Finalmente, el consumo final de la energía eléctrica en el mercado eléctrico tuvo la siguiente distribución: 60% se comercializó en el mercado libre y 40% en el mercado regulado.
+
+***Grafico***
+
+<center>
+![ ](C:/GitHub/sthefanny/investigacionfinal/2018b.png){ width=80% }
+</center>
+
+
+
+### Balance e Indicadores 2020
+
+***Balance de Enegía Eléctrica***
+
+El balance de energía eléctrica muestra el flujo que esta recorre, desde el punto donde se genera (incluyendo la importación), hasta que llega al consumidor final, para esto, la energía es transportada a través de los sistemas de transmisión y distribución.
+
+Durante el año 2020, la energía eléctrica total generada en el país fue 52 744 GWh y se importaron desde el Ecuador 37 GWh. Del total de la energía generada en país 50 657 GWh (96%) corresponde a las empresas del mercado eléctrico y 2 087 GWh (4%) corresponde a las empresas industriales que generan para su uso propio.
+
+Con relación a la energía eléctrica total disponible (generación nacional más importación) el 1,4% se utilizó para los servicios auxiliares (consumo propio) de las centrales eléctricas, el 12,0% se perdió en el proceso de transmisión y distribución de la energía eléctrica, y finalmente el 86,6% de la energía total disponible llegó hasta el consumidor final.
+
+La energía generada por las empresas del mercado eléctrico, el 1,3% fue utilizado para los servicios auxiliares de las centrales eléctricas, el 12,3% fueron pérdidas y el 86,4% llegó hasta el consumidor final. Asimismo, de la energía generada por las empresas industriales para su uso propio, el 4,3% se usó para servicios auxiliares de sus centrales, el 4,6% fueron pérdidas y el 91,1% se para las operaciones de estas empresas industriales que están conformadas por minera, petroleras, refinería, etc.
+
+Finalmente, el consumo final de la energía eléctrica en el mercado eléctrico tuvo la siguiente distribución: 59% se comercializó en el mercado libre y 41% en el mercado regulado.
+
+***Grafico***
+
+<center>
+![ ](C:/GitHub/sthefanny/investigacionfinal/2020.png){ width=80% }
+</center>
+
+
+
+### Balance e Indicadores 2021
+
+***Balance de Enegía Eléctrica***
+
+El balance de energía eléctrica muestra el flujo que esta recorre, desde el punto donde se genera (incluyendo la importación), hasta el consumidor final, para esto, la energía es transportada a través de los sistemas de transmisión y distribución. 
+Durante el año 2021, la energía eléctrica total generada en el país fue 57 397 GWh y se importaron desde el Ecuador 43 GWh. Del total de la energía generada en país 55 538 GWh (97%) corresponde a las empresas generadoras del mercado eléctrico y 1 859 GWh (3%) corresponde a las empresas industriales que generan para su consumo propio (uso propio). Las empresas industriales que tienen mayor participación en la generación son: empresas petroleras y mineras. 
+Con relación a la energía eléctrica total disponible (generación nacional más importación) el 1,5% se utilizó para los servicios auxiliares (consumo propio) de las centrales eléctricas, el 11,6% se perdió en el proceso de transmisión y distribución de la energía eléctrica, y finalmente el 86,9% de la energía total disponible llegó hasta el consumidor final. 
+La energía generada por las empresas del mercado eléctrico, el 1,4% fue utilizado para los servicios auxiliares de las centrales eléctricas, el 11,8% fueron pérdidas y el 86,8% llegó hasta el consumidor final. Asimismo, de la energía generada por las empresas industriales para su uso propio, el 4,0% se usó para servicios auxiliares de sus centrales, el 5,0% fueron pérdidas y el 90,9% se usó para sus operaciones. 
+Finalmente, la energía eléctrica comercializada por las empresas generadoras y distribuidoras al consumidor final, fue 48 054 GWh, de los cuales, 18 372 GWh (38%) se comercializó en el mercado regulado y 29 682 GWh (62%) en el mercado libre.
+
+***Grafico***
+
+<center>
+![ ](C:/GitHub/sthefanny/investigacionfinal/2021.png){ width=80% }
+</center>
+
+###  Balance e Indicadores 2022
+
+***Balance de Enegía Eléctrica***
+
+
+
+El balance de energía eléctrica muestra el flujo que esta recorre desde su generación hasta llegar al consumidor final. Para lograr esto, la energía eléctrica se transporta a través de los sistemas de transmisión y distribución.
+
+Durante el año 2022, se generaron un total de 59 713 GWh de energía eléctrica en el país, y se importaron 32 GWh desde Ecuador. Del total de la energía generada en el país, 57 814 GWh (97%) proviene de las empresas generadoras del mercado eléctrico, mientras que 1 898 GWh (3%) proviene de las empresas industriales que generan energía eléctrica para su propio consumo (uso propio). En este último grupo, las empresas industriales con mayor participación en la generación de energía eléctrica son las empresas petroleras y mineras.
+
+En cuanto a la energía eléctrica total disponible, que incluye la generación nacional más la importación, el 1,4% se utilizó para los servicios auxiliares de las centrales eléctricas, el 11,1% se perdió en el proceso de transmisión y distribución, y finalmente, el 87,4% de la energía total disponible llegó al consumidor final.
+
+De la energía generada por las empresas del mercado eléctrico, el 1,2% se utilizó para los servicios auxiliares de las centrales eléctricas, el 11,3% fueron pérdidas, y el 87,5% llegó al consumidor final. Asimismo, de la energía generada por las empresas industriales para su propio uso, el 7,2% se destinó a los servicios auxiliares de sus centrales, el 5,8% se perdió y el 87,1% se utilizó para sus operaciones.
+
+Finalmente, la energía eléctrica comercializada por las empresas generadoras y distribuidoras al consumidor final fue de 48 092 GWh, de los cuales el 38% (18 410 GWh) se comercializó en el mercado regulado y el 62% (29 682 GWh) en el mercado libre.
+
+<center>
+![ ](C:/GitHub/sthefanny/investigacionfinal/2022.png){ width=80% }
+</center>
+
+
+Fallas
+===================================== 
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Por causas
+
+```{r}
+# Crear el conjunto de datos
+causas_datos <- data.frame(
+  CAUSAS = c("EXT", "FEC", "FEP", "FHU", "FNA", "NO IDE", "OPE", "OTROS"),
+  AÑO2015 = c(51, 371, 18, 32, 359, 316, 0, 85),
+  AÑO2016 = c(64, 418, 0, 46, 426, 187, 0, 153),
+  AÑO2017 = c(82, 301, 0, 27, 282, 168, 0, 85),
+  AÑO2018 = c(69, 543, 46, 43, 370, 378, 0, 142),
+  AÑO2019 = c(78, 369, 15, 10, 249, 666, 0, 103),
+  AÑO2020 = c(145, 352, 40, 7, 192, 176, 0, 32),
+  AÑO2021 = c(143, 420, 37, 33, 319, 196, 0, 38),
+  AÑO2022 = c(174, 392, 141, 28, 322, 205, 18, 31),
+  AÑO2023 = c(196, 464, 125, 47, 485, 271, 3, 172)
+)
+
+# Transformar los datos a formato largo (tidy data)
+causas_long <- causas_datos %>%
+  pivot_longer(cols = starts_with("AÑO"), names_to = "Año", values_to = "Cantidad")
+
+# Crear el gráfico de líneas con plotly para habilitar el zoom
+plot_ly(causas_long, x = ~Año, y = ~Cantidad, type = 'scatter', mode = 'lines+markers', color = ~CAUSAS) %>%
+  layout(title = "Causas a lo largo de los Años",
+         xaxis = list(title = "Año"),
+         yaxis = list(title = "Cantidad"),
+         dragmode = "zoom",
+         showlegend = TRUE)
+
+```
+
+Column {.tabset .tabset-fade}
+-------------------------------------
+
+
+### Sector Norte
+
+```{r}
+# Datos
+norte <- c(185, 150, 103, 154, 157, 143, 144, 168, 243)
+
+# Crear un data frame
+df_norte <- data.frame(
+  Año = 2015:2023,
+  Energia = norte
+)
+
+# Ordenar de mayor a menor
+df_norte <- df_norte %>% arrange(desc(Energia))
+
+# Calcular porcentaje acumulado en relación al valor máximo
+df_norte <- df_norte %>% mutate(
+  Porcentaje = Energia / max(Energia) * 100,
+  Frecuencia_Acumulada = cumsum(Energia) / sum(Energia) * 100
+)
+
+# Crear el gráfico de barras y la línea de frecuencia acumulada
+ggplot(df_norte, aes(x = reorder(as.factor(Año), -Energia), y = Energia)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  geom_line(aes(x = as.factor(Año), y = Frecuencia_Acumulada, group = 1), color = "red", size = 1.5) +
+  scale_y_continuous(name = "Cantidades", sec.axis = sec_axis(~./100, name = "Porcentaje Acumulado")) +
+  labs(title = "Pareto fallas sector norte",
+       y = "Cantidades y Porcentaje Acumulado",
+       x = "Año") +
+  theme_minimal()
+```
+
+### Sector centro
+```{r}
+# Datos
+centro <- c(213, 225, 162, 280, 245, 130, 294, 293, 328)
+
+# Crear un data frame
+df_centro <- data.frame(
+  Año = 2015:2023,
+  Energia = centro
+)
+
+# Ordenar de mayor a menor
+df_centro <- df_centro %>% arrange(desc(Energia))
+
+# Calcular porcentaje acumulado en relación al valor máximo
+df_centro <- df_centro %>% mutate(
+  Porcentaje = Energia / max(Energia) * 100,
+  Frecuencia_Acumulada = cumsum(Energia) / sum(Energia) * 100
+)
+
+# Crear el gráfico de barras y la línea de frecuencia acumulada
+ggplot(df_centro, aes(x = reorder(as.factor(Año), -Energia), y = Energia)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  geom_line(aes(x = as.factor(Año), y = Frecuencia_Acumulada, group = 1), color = "red", size = 1.5) +
+  scale_y_continuous(name = "Cantidades", sec.axis = sec_axis(~./100, name = "Porcentaje Acumulado")) +
+  labs(title = "Pareto fallas sector Centro",
+       y = "Cantidades y Porcentaje Acumulado",
+       x = "Año") +
+  theme_minimal()
+```
+
+### Sector sur
+
+```{r}
+# Datos
+sur <- c(286, 329, 209, 323, 246, 141, 180, 184, 351)
+
+# Crear un data frame
+df_sur <- data.frame(
+  Año = 2015:2023,
+  Energia = sur
+)
+
+# Ordenar de mayor a menor
+df_sur <- df_sur %>% arrange(desc(Energia))
+
+# Calcular porcentaje acumulado en relación al valor máximo
+df_sur <- df_sur %>% mutate(
+  Porcentaje = Energia / max(Energia) * 100,
+  Frecuencia_Acumulada = cumsum(Energia) / sum(Energia) * 100
+)
+
+# Crear el gráfico de barras y la línea de frecuencia acumulada
+ggplot(df_sur, aes(x = reorder(as.factor(Año), -Energia), y = Energia)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  geom_line(aes(x = as.factor(Año), y = Frecuencia_Acumulada, group = 1), color = "red", size = 1.5) +
+  scale_y_continuous(name = "Cantidades", sec.axis = sec_axis(~./100, name = "Porcentaje Acumulado")) +
+  labs(title = "Pareto fallas sector Sur",
+       y = "Cantidades y Porcentaje Acumulado",
+       x = "Año") +
+  theme_minimal()
+```
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Según los tipos
+
+```{r}
+# Crear el conjunto de datos
+tipos_datos <- data.frame(
+  TIPOS = c("LÍNEAS DE TRANSMISIÓN", "EN TRANSFORMADORES", "EN UNIDADES DE GENERACIÓN", "EN SVC", "EN BARRAS", "EN CELDAS", "EN STATCOM"),
+  AÑO2015 = c(684, 51, 450, 12, 19, 10, 0),
+  AÑO2016 = c(704, 74, 455, 21, 18, 8, 3),
+  AÑO2017 = c(474, 48, 379, 10, 20, 8, 4),
+  AÑO2018 = c(757, 78, 641, 26, 26, 34, 24),
+  AÑO2019 = c(648, 68, 674, 9, 16, 31, 8),
+  AÑO2020 = c(414, 42, 419, 3, 13, 29, 24),
+  AÑO2021 = c(618, 53, 480, 1, 7, 19, 8),
+  AÑO2022 = c(645, 71, 540, 19, 24, 9, 3),
+  AÑO2023 = c(922, 72, 727, 8, 23, 8, 3)
+)
+
+ui <- fluidPage(
+  selectInput("tipo", "Seleccionar Tipo:", choices = tipos_datos$TIPOS),
+  plotlyOutput("grafico")
+)
+
+server <- function(input, output) {
+  tipo_seleccionado <- reactive({
+    tipos_datos %>%
+      filter(TIPOS == input$tipo) %>%
+      pivot_longer(cols = starts_with("AÑO"), names_to = "Año", values_to = "Cantidad")
+  })
+
+  output$grafico <- renderPlotly({
+    plot_ly(tipo_seleccionado(), x = ~Año, y = ~Cantidad, type = 'bar') %>%
+      layout(title = paste("Cantidad por Año para", input$tipo),
+             xaxis = list(title = "Año"),
+             yaxis = list(title = "Cantidad"))
+  })
+}
+
+shinyApp(ui, server)
+
+```
+
+
+
+Costos
+===================================== 
+
+
+Column 
+-------------------------------------
+### Definición
+
+Son los costos adicionales de generación eléctrica para producir una unidad adicional de electricidad en un determinado momento y lugar. En este caso se observa en la grafica los costos marginales que van desde el año 2015 al 2021.
+
+
+<center>
+![ ](C:/GitHub/sthefanny/investigacionfinal/costomarg.png){ width=100% }
+</center>
+
+Column 
+-------------------------------------
+
+### Costos Marginales
+
+```{r}
+# UI
+ui <- fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("year",
+                  "Seleccionar Año:",
+                  min = 2015,
+                  max = 2021,
+                  value = 2021,
+                  step = 1)
+    ),
+    mainPanel(
+      plotOutput("bar_plot")
+    )
+  )
+)
+
+# Server
+server <- function(input, output) {
+  # Filtrar el conjunto de datos según el año seleccionado
+  selected_data <- reactive({
+    filter(costo, !is.na(get(paste0("AÑO", input$year))))
+  })
+
+  # Crear el gráfico de barras interactivo
+  output$bar_plot <- renderPlot({
+    ggplot(selected_data(), aes(x = MESES, y = get(paste0("AÑO", input$year)), fill = get(paste0("AÑO", input$year)))) +
+      geom_bar(stat = "identity") +
+      scale_fill_gradientn(colors = c("yellow", "orange", "red"), na.value = "white", guide = "legend") +
+      labs(title = paste("Gráfico de Barras de Costo", input$year, "por Mes"),
+           x = "Mes",
+           y = paste("Costo", input$year)) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  })
+}
+
+# Ejecutar la aplicación Shiny
+shinyApp(ui, server)
+
+```
